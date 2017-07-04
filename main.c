@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <allegro5/allegro.h>
+#include <allegro5/allegro_font.h>
+#include <allegro5/allegro_ttf.h>
 #include <time.h>
 #include "constants.h"
 #include "objects.h"
@@ -13,11 +15,15 @@ const int field_width = 640;
 const int field_height = 480;
 const int falling_stars_count = 40;
 const int shooting_speed = 20000;
+const int message_size = 14;
 
 extern const int buf_size;
 
 void refresh_field(void);
 int init(void);
+void waiting_screen(char *text, void (*res_f)());
+void draw_score(void);
+void reset_score(void);
 
 void draw_stars(void);
 void rand_set_stars(void);
@@ -37,6 +43,7 @@ char *spaceship_coordinates_to_sent(void);
 void draw_rect(float x, float y, float x2, float y2, ALLEGRO_COLOR color);
 
 void set_x_y_from_response(char *init_pos, int *x, int *y);
+void proccess_request(char *init_pos);
 
 struct pixel_pos **falling_stars_pos;
 struct magazine *player_bullets_magazine;
@@ -48,9 +55,11 @@ int player_health = 1000;
 
 int bullet_dir;
 int got_bullet;
+int my_score = 0, oponent_score = 0;
 int *my_socket;
 
 ALLEGRO_KEYBOARD_STATE current_state;
+ALLEGRO_FONT *font_50, *font_15, *bfont_15;
 
 clock_t begin;
 
@@ -87,35 +96,28 @@ int main(int argc, char **argv) {
     }
 
     al_install_keyboard();
+    al_init_font_addon();
+    al_init_ttf_addon();
     if (!al_is_keyboard_installed()) return -1;
 
     init();
-    
+
+    waiting_screen("press 's' to start", NULL);
+
     while (1) {
         refresh_field();
-        draw_stars(); 
+        draw_stars();          
+        draw_score();
         
-        char *init_pos = calloc(14, sizeof(char) * 14);
-        
-        if (got_bullet) { 
-            if (bullet_dir == -1) { 
-                read_message(*my_socket, init_pos, 14); 
-                send_message(*my_socket, send_pl_bullets());
-            } else {
-                send_message(*my_socket, send_pl_bullets());
-                read_message(*my_socket, init_pos, 14);
-            }
-            got_bullet = 0;
-        } else {
-            if (bullet_dir == -1) { 
-                read_message(*my_socket, init_pos, 14); 
-                send_message(*my_socket, spaceship_coordinates_to_sent());
-            } else {
-                send_message(*my_socket, spaceship_coordinates_to_sent());
-                read_message(*my_socket, init_pos, 14);
-            }
+        if (my_score > 1000) {
+            waiting_screen("YOU WON!", &reset_score);
+        } else if (oponent_score > 1000) {
+            waiting_screen("YOU LOSE!", &reset_score);
         }
-        
+
+        char *init_pos = calloc(14, sizeof(char) * message_size);
+        proccess_request(init_pos);
+
         int x = 0, y = 0;
         set_x_y_from_response(init_pos, &x, &y);
 
@@ -125,12 +127,14 @@ int main(int argc, char **argv) {
         } else if (init_pos[0] == 'b') {
             add_bullet(oponent_bullets_magazine, oponent_space_craft_pos, bullet_dir * (-1));
         }
+
+        free(init_pos);
         
         draw_space_craft(bullet_dir);
         draw_oponent_space_craft(bullet_dir * (-1));
         draw_player_bullets();
         draw_oponent_bullets();
-        let_stars_fall();
+        let_stars_fall(); 
 
         al_get_keyboard_state(&current_state);
         if (al_key_down(&current_state, ALLEGRO_KEY_ESCAPE)) break;
@@ -153,6 +157,10 @@ int init(void) {
     falling_stars_pos = malloc(sizeof(pixel_pos) * falling_stars_count);
     space_craft_pos = malloc(sizeof(pixel_pos));
     oponent_space_craft_pos = malloc(sizeof(pixel_pos));
+   
+    font_50 = al_load_ttf_font("font/gfont.ttf", 50, 0);
+    font_15 = al_load_ttf_font("font/gfont.ttf", 15, 0);
+    bfont_15 = al_load_ttf_font("font/gfont.ttf", 25, 0);
 
     player_bullets_magazine = init_magazine();
     oponent_bullets_magazine = init_magazine();
@@ -166,6 +174,46 @@ int init(void) {
     draw_stars();
     
     return 0;
+}
+
+void waiting_screen(char *text,void (*res_f)()) {
+    for (int i = 0; i < 32; i++) {
+        refresh_field();
+        al_draw_text(font_50, al_map_rgb(0, i, i), field_width / 2 + 10, field_height / 2,
+                    ALLEGRO_ALIGN_CENTRE, text);
+
+        al_draw_text(font_50, al_map_rgb(0, i * 8, i * 8), field_width / 2, field_height / 2,
+                    ALLEGRO_ALIGN_CENTRE, text);
+        al_flip_display();
+    }
+
+    while (1) {
+        refresh_field();
+
+        al_draw_text(font_50, al_map_rgb(0, 32, 32), field_width / 2 + 10, field_height / 2,
+                    ALLEGRO_ALIGN_CENTRE, text);
+
+        al_draw_text(font_50, al_map_rgb(0, 255, 255), field_width / 2, field_height / 2,
+                    ALLEGRO_ALIGN_CENTRE, text);
+
+        al_flip_display();
+        al_get_keyboard_state(&current_state);
+        if (al_key_down(&current_state, ALLEGRO_KEY_S)) {
+            if (res_f != NULL) (*res_f)();
+            break;
+        }
+    }
+}
+
+void reset_score(void) {
+    my_score = 0;
+    oponent_score = 0;
+}
+
+void draw_score(void) { 
+    al_draw_textf(bfont_15, al_map_rgb(255, 255, 255), 1, 0, 0, "score: %d", my_score);
+    al_draw_textf(bfont_15, al_map_rgb(255, 255, 255), 
+                 field_width, 0, ALLEGRO_ALIGN_RIGHT, "%d :oponent socre", oponent_score);
 }
 
 int char_to_int(char *c) {
@@ -196,6 +244,27 @@ void set_x_y_from_response(char *init_pos, int *x, int *y) {
             
     *x /= 10;
     *y /= 10;
+}
+
+void proccess_request(char *init_pos) { 
+    if (got_bullet) { 
+        if (bullet_dir == -1) { 
+            read_message(*my_socket, init_pos, message_size); 
+            send_message(*my_socket, send_pl_bullets());
+        } else {
+            send_message(*my_socket, send_pl_bullets());
+            read_message(*my_socket, init_pos, message_size);
+        }
+        got_bullet = 0;
+    } else {
+        if (bullet_dir == -1) { 
+            read_message(*my_socket, init_pos, message_size);
+            send_message(*my_socket, spaceship_coordinates_to_sent());
+        } else {
+            send_message(*my_socket, spaceship_coordinates_to_sent());
+            read_message(*my_socket, init_pos, message_size);
+        }
+    }
 }
 
 void rand_set_stars(void) {
@@ -271,24 +340,37 @@ void draw_player_bullets(void) {
     for (int i = 0; i < player_bullets_magazine->num_of_bullets; i++) {
         player_bullets_magazine->bullets[i]->x += bullet_dir;
 
-        draw_rect(player_bullets_magazine->bullets[i]->x + 12, 
-                  player_bullets_magazine->bullets[i]->y + 7,
-                  player_bullets_magazine->bullets[i]->x + 14,
-                  player_bullets_magazine->bullets[i]->y + 9,
+        draw_rect(player_bullets_magazine->bullets[i]->x, 
+                  player_bullets_magazine->bullets[i]->y,
+                  player_bullets_magazine->bullets[i]->x + 2,
+                  player_bullets_magazine->bullets[i]->y + 2,
                   al_map_rgb(0, 255, 0));
 
+        if (player_bullets_magazine->bullets[i]->x > oponent_space_craft_pos->x &&
+            player_bullets_magazine->bullets[i]->x < oponent_space_craft_pos->x + 10 &&
+            player_bullets_magazine->bullets[i]->y + 2 > oponent_space_craft_pos->y &&
+            player_bullets_magazine->bullets[i]->y < oponent_space_craft_pos->y + 10) {
+            my_score++;
+        }
     }
 }
 
 void draw_oponent_bullets(void) {
     for (int i = 0; i < oponent_bullets_magazine->num_of_bullets; i++) {
         oponent_bullets_magazine->bullets[i]->x -= bullet_dir;
-
-        draw_rect(oponent_bullets_magazine->bullets[i]->x + 12, 
-                  oponent_bullets_magazine->bullets[i]->y + 7,
-                  oponent_bullets_magazine->bullets[i]->x + 14,
-                  oponent_bullets_magazine->bullets[i]->y + 9,
+        
+        draw_rect(oponent_bullets_magazine->bullets[i]->x, 
+                  oponent_bullets_magazine->bullets[i]->y,
+                  oponent_bullets_magazine->bullets[i]->x + 2,
+                  oponent_bullets_magazine->bullets[i]->y + 2,
                   al_map_rgb(0, 255, 0));
+
+        if (oponent_bullets_magazine->bullets[i]->x > space_craft_pos->x &&
+            oponent_bullets_magazine->bullets[i]->x < space_craft_pos->x + 10 &&
+            oponent_bullets_magazine->bullets[i]->y + 2 > space_craft_pos->y &&
+            oponent_bullets_magazine->bullets[i]->y < space_craft_pos->y + 10) {
+            oponent_score++;
+        }
     }
 }
 
