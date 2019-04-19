@@ -7,6 +7,7 @@
 #include "objects.h"
 #include "bullets.h"
 #include "server.h"
+#include "client.h"
 #include "communication.h"
 #include <pthread.h>
 #include <math.h>
@@ -82,7 +83,7 @@ int main(int argc, char **argv) {
     } else if (argv[1][0] == 'c') {
         my_socket = init_client();
         bullet_dir = -1;
-    }
+    }    
 
     if(!al_init()) {
        fprintf(stderr, "failed to initialize allegro!\n");
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
     if (!al_is_keyboard_installed()) return -1;
 
     init();
-
+ 
     waiting_screen("press 's' to start", NULL);
 
     while (1) {
@@ -110,14 +111,13 @@ int main(int argc, char **argv) {
         draw_score();
         
         if (my_score > 1000) {
-            waiting_screen("YOU WON!", &reset_score);
+            waiting_screen("YOU WON! Press S for restart", &reset_score);
         } else if (oponent_score > 1000) {
-            waiting_screen("YOU LOSE!", &reset_score);
+            waiting_screen("YOU LOSE! Press s for restart", &reset_score);
         }
-
+        
         char *init_pos = calloc(14, sizeof(char) * message_size);
         proccess_request(init_pos);
-
         int x = 0, y = 0;
         set_x_y_from_response(init_pos, &x, &y);
 
@@ -158,9 +158,9 @@ int init(void) {
     space_craft_pos = malloc(sizeof(pixel_pos));
     oponent_space_craft_pos = malloc(sizeof(pixel_pos));
    
-    font_50 = al_load_ttf_font("font/gfont.ttf", 50, 0);
-    font_15 = al_load_ttf_font("font/gfont.ttf", 15, 0);
-    bfont_15 = al_load_ttf_font("font/gfont.ttf", 25, 0);
+    font_50 = al_load_ttf_font("font/Zyana-Regular.ttf", 50, 0);
+    font_15 = al_load_ttf_font("font/Zyana-Regular.ttf", 15, 0);
+    bfont_15 = al_load_ttf_font("font/Zyana-Regular.ttf", 25, 0);
 
     player_bullets_magazine = init_magazine();
     oponent_bullets_magazine = init_magazine();
@@ -247,7 +247,7 @@ void set_x_y_from_response(char *init_pos, int *x, int *y) {
 }
 
 void proccess_request(char *init_pos) { 
-    if (got_bullet) { 
+  if (got_bullet) { 
         if (bullet_dir == -1) { 
             read_message(*my_socket, init_pos, message_size); 
             send_message(*my_socket, send_pl_bullets());
